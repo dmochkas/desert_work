@@ -1,0 +1,11 @@
+{
+  "desert_env": "../../../../../DESERT_buildCopy_LOCAL/environment",
+  "rng_rounds": 20,
+  "rng_start": 1,
+  "combine": {
+    "nn": [1, 10, 20, 50, 100, 200],
+    "period": [28800.0, 8640.0, 1728.0, 864.0, 216.0],
+    "sink_mode": [1, 3]
+  },
+  "iterations": []
+}
