@@ -33,6 +33,8 @@ load libuwahoi_phy.so
 set ns [new Simulator]
 $ns use-Miracle
 
+source "../common/energy.tcl"
+
 ##################
 # Tcl variables  #
 ##################
@@ -241,12 +243,12 @@ lappend node_ids $dstId
 createNode $srcId
 $position($srcId) setX_ 0
 $position($srcId) setY_ 0
-$position($srcId) setZ_ -10
+$position($srcId) setZ_ -1000
 
 createNode $dstId
 $position($dstId) setX_ 0
-$position($dstId) setY_ 1000
-$position($dstId) setZ_ -10
+$position($dstId) setY_ 0
+$position($dstId) setZ_ -1
 
 set dstIP [$ipif($dstId) addr]
 set appPort [$udp($dstId) assignPort $cbr($srcId)]
@@ -351,7 +353,8 @@ proc finish {} {
         puts "---------------------------------------------------------------------"
         puts "- Example of PHY layer statistics for node 1 -"
         puts "Tot. pkts lost            : [$phy(0) getTotPktsLost]"
-        puts "Tot. energy            : [$phy(0) getConsumedEnergyTx]"
+        puts "Tot. energy               : [$phy(0) getConsumedEnergyTx]"
+        puts "Tot. energy with idle     : [computeTotalConsumption $phy(0) 0.005 $opt(starttime) $opt(stoptime)]"
 
         puts "done!"
     }
