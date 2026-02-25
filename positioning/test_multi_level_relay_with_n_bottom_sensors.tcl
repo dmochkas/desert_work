@@ -34,7 +34,10 @@ load libuwahoi_phy.so
 set ns [new Simulator]
 $ns use-Miracle
 
+source "../common/get-config.tcl"
 source "../common/positioning.tcl"
+
+load-positions "dag_position_6.yaml"
 
 ##################
 # Tcl variables  #
@@ -57,7 +60,7 @@ set opt(freq)               50000.0 ;#Frequency used in Hz
 set opt(bw)                 25000.0 ;#Bandwidth used in Hz
 set opt(bitrate)            260     ;#Bitrate in bps
 set opt(cbr_period)         1000
-set opt(rngstream)	10
+set opt(rngstream)	20
 
 if {$opt(bash_parameters)} {
     set opt(finish_mode)        "export" ;# diag or export
@@ -123,21 +126,6 @@ Module/UW/CBR set debug_               0
 if {$opt(replica_mode) != 1 && $opt(replica_mode) != 3} {
     error "Invalid replica mode $opt(replica_mode)"
 }
-#Module/UW/REPL set replicas_     $opt(replica_mode)
-#Module/UW/REPL set spacing_      $opt(replica_spacing)
-
-#Module/UW/AHOI/PHY  set BitRate_                    $opt(bitrate)
-#Module/UW/AHOI/PHY  set AcquisitionThreshold_dB_    5.0
-#Module/UW/AHOI/PHY  set RxSnrPenalty_dB_            0
-#Module/UW/AHOI/PHY  set TxSPLMargin_dB_             0
-#Module/UW/AHOI/PHY  set MaxTxSPL_dB_                $opt(txpower)
-#Module/UW/AHOI/PHY  set MinTxSPL_dB_                10
-#Module/UW/AHOI/PHY  set MaxTxRange_                 300
-#Module/UW/AHOI/PHY  set PER_target_                 0
-#Module/UW/AHOI/PHY  set CentralFreqOptimization_    0
-#Module/UW/AHOI/PHY  set BandwidthOptimization_      0
-#Module/UW/AHOI/PHY  set SPLOptimization_            0
-#Module/UW/AHOI/PHY  set debug_                      0
 
 Module/UW/PHYSICAL  set BitRate_                    $opt(bitrate)
 Module/UW/PHYSICAL  set AcquisitionThreshold_dB_    15.0
@@ -162,7 +150,7 @@ proc createNode { id sink_flag } {
     global channel propagation data_mask ns cbr cbr_sink position node udp portnum portnum_sink ipr ipif channel_estimator
     global phy posdb opt rvposx rvposy rvposz mhrouting mll mac woss_utilities woss_creator db_manager
     global node_coordinates interf_data
-    global childrenIds nChildren
+    global sensorIds nSensors relayIds
 
     if {$id > 254} {
 		puts "Max id value is 254"
@@ -172,7 +160,7 @@ proc createNode { id sink_flag } {
     set node($id) [$ns create-M_Node $opt(tracefile) $opt(cltracefile)]
 
     if {$sink_flag} {
-        foreach node_id $childrenIds {
+        foreach node_id $sensorIds {
             set cbr_sink($id,$node_id)  [new Module/UW/CBR]
         }
     } else {
@@ -183,17 +171,16 @@ proc createNode { id sink_flag } {
     set ipr($id)  [new Module/UW/StaticRouting]
     set ipif($id) [new Module/UW/IP]
     set mll($id)  [new Module/UW/MLL]
-    # set rep($id)  [new Module/UW/REPL]
     set mac($id)  [new Module/UW/CSMA_ALOHA]
     #set phy($id)  [new Module/UW/AHOI/PHY]
     set phy($id) [new Module/UW/PHYSICAL]
 
-    #$ipr($id) setLog 3 "log_ip.out"
+    $ipr($id) setLog 3 "log_ip.out"
     $udp($id) setLog 3 "log_udp.out"
     #$cbr($id) setLog 3 "log_cbr.out"
 
     if {$sink_flag} {
-        foreach node_id $childrenIds {
+        foreach node_id $sensorIds {
             $node($id) addModule 7 $cbr_sink($id,$node_id) 0 "CBR"
         }
     } else {
@@ -204,13 +191,11 @@ proc createNode { id sink_flag } {
     $node($id) addModule 5 $ipr($id)   1  "IPR"
     $node($id) addModule 4 $ipif($id)  1  "IPF"
     $node($id) addModule 3 $mll($id)   1  "MLL"
-    # $node($id) addModule 3 $rep($id)   1  "REP"
     $node($id) addModule 2 $mac($id)   1  "MAC"
     $node($id) addModule 1 $phy($id)   0  "PHY"
 
-	# We do only broadcast
 	if {$sink_flag} {
-        foreach node_id $childrenIds {
+        foreach node_id $sensorIds {
             $node($id) setConnection $cbr_sink($id,$node_id)  $udp($id)      0
             set portnum_sink($id,$node_id) [$udp($id) assignPort $cbr_sink($id,$node_id)]
         }
@@ -222,7 +207,6 @@ proc createNode { id sink_flag } {
     $node($id) setConnection $ipr($id)      $ipif($id)  1
     $node($id) setConnection $ipif($id)     $mll($id)   1
     $node($id) setConnection $mll($id)      $mac($id)   1
-    # $node($id) setConnection $rep($id)      $mac($id)   1
     $node($id) setConnection $mac($id)      $phy($id)   1
     $node($id) addToChannel  $channel       $phy($id)   1
 
@@ -246,10 +230,7 @@ proc createNode { id sink_flag } {
 
     $phy($id) setSpectralMask $data_mask
     $phy($id) setInterference $interf_data($id)
-    $phy($id) setInterferenceModel "MEANPOWER"; # "CHUNK" is not supported
-    #$phy($id) setRangePDRFileName "../.desert/ahoi/pdr.csv"
-    #$phy($id) setSIRFileName "../.desert/ahoi/sir.csv"
-    #$phy($id) initLUT
+    $phy($id) setInterferenceModel "MEANPOWER";
 
     $mac($id) $opt(ack_mode)
     $mac($id) initialize
@@ -258,46 +239,65 @@ proc createNode { id sink_flag } {
 #####################
 # Node Configuration #
 #####################
-set sinkId 253
+set sinkId 254
 
-set nChildren 32
-set childrenIds [list]
-for {set i 1} {$i <= $nChildren} {incr i} {
+set firstLevelRelays [list 1 2]
+set secondLevelRelays [list 3 4 5 6]
+set relayIds [list 1 2 3 4 5 6]
+set nRelay [llength $relayIds]
+foreach relayId $relayIds {
+    createNode $relayId false
+}
+
+# TODO: Works only with multiples of parent
+set nSensors 32
+set sensorIds [list]
+for {set i [expr $nRelay + 1]} {$i <= [expr $nRelay + $nSensors]} {incr i} {
     createNode $i false
-    #$position($i) setX_ [expr 10 * ($i + 1 )]
-    #$position($i) setY_ [expr 10 * ($i + 1 )]
-    #$position($i) setZ_ -1000
-    lappend childrenIds $i
+    lappend sensorIds $i
 }
 
 createNode $sinkId true
-$position($sinkId) setX_ 0
-$position($sinkId) setY_ 0
-$position($sinkId) setZ_ -1000
 
-placeUniformlyAtDBelowParent $childrenIds $sinkId position 1000 500
+assignPositionsFromConfig position positions
 
 set sinkIP [$ipif($sinkId) addr]
+set sinkMAC [$mac($sinkId) addr]
 
-foreach child $childrenIds {
-    set sinkPort $portnum_sink($sinkId,$child)
-
-    $mll($child) addentry $sinkIP [$mac($sinkId) addr]
-    $ipr($child) addRoute $sinkIP $sinkIP
-    #$ipr($child) addRoute 255 255
-    $cbr($child) set destAddr_ $sinkIP
-    $cbr($child) set destPort_ $sinkPort
-
-    $ns at $opt(starttime)    "$cbr($child) start"
-    $ns at $opt(stoptime)     "$cbr($child) stop"
+foreach firstLevelRelay $firstLevelRelays {
+    $mll($firstLevelRelay) addentry $sinkIP $sinkMAC
+    $ipr($firstLevelRelay) addRoute $sinkIP $sinkIP
 }
 
+set clusterSize [expr $nSensors / [llength $secondLevelRelays]]
+set i 0
+foreach secondLevelRelay $secondLevelRelays {
+    set relayI [expr $i * [llength $firstLevelRelays] / [llength $secondLevelRelays]]
+    set relayIP [$ipif([lindex $firstLevelRelays $relayI]) addr]
+    set relayMAC [$mac([lindex $firstLevelRelays $relayI]) addr]
+    $mll($secondLevelRelay) addentry $relayIP $relayMAC
+    $ipr($secondLevelRelay) addRoute $sinkIP $relayIP
 
-#####################
-# Start/Stop Timers #
-#####################
-#$ns at $opt(starttime)    "$cbr($srcId) start"
-#$ns at $opt(stoptime)     "$cbr($srcId) stop"
+    # TODO: Consider last sensors
+    placeUniformlyAtDBelowParent [lrange $sensorIds [expr $i*$clusterSize] [expr $i*$clusterSize+$clusterSize]] $secondLevelRelay position 1000 500
+    set i [expr $i + 1]
+}
+
+for {set i 0} {$i < [llength $sensorIds]} {incr i} {
+    set sensor [lindex $sensorIds $i]
+    set relayI [expr $i / $clusterSize]
+    set relayIP [$ipif([lindex $secondLevelRelays $relayI]) addr]
+    set relayMAC [$mac([lindex $secondLevelRelays $relayI]) addr]
+    set sinkPort $portnum_sink($sinkId,$sensor)
+
+    $mll($sensor) addentry $relayIP $relayMAC
+    $ipr($sensor) addRoute $sinkIP $relayIP
+    $cbr($sensor) set destAddr_ $sinkIP
+    $cbr($sensor) set destPort_ $sinkPort
+
+    $ns at $opt(starttime)    "$cbr($sensor) start"
+    $ns at $opt(stoptime)     "$cbr($sensor) stop"
+}
 
 ###################
 # Final Procedure #
@@ -308,7 +308,7 @@ proc finish {} {
     global node_coordinates position
     global ipr_sink ipr ipif udp cbr phy phy_data_sink
     global node_stats tmp_node_stats sink_stats tmp_sink_stats
-    global sinkId childrenIds
+    global sinkId sensorIds relayIds nSensors
 
     if ($opt(verbose)) {
         puts "---------------------------------------------------------------------"
@@ -336,7 +336,7 @@ proc finish {} {
     set cbr_throughput         0.0
     set cbr_per                0.0
 
-    foreach node_id $childrenIds {
+    foreach node_id $sensorIds {
         set position_x              [$position($node_id) getX_]
         set position_y              [$position($node_id) getY_]
         set position_z              [$position($node_id) getZ_]
@@ -348,40 +348,25 @@ proc finish {} {
         puts "node($node_id) X     : $position_x"
         puts "node($node_id) Y     : $position_y"
         puts "node($node_id) Z     : $position_z"
-        puts "cbr($node_id) Throughput     : $cbr_throughput"
         puts "cbr($node_id) Packets sent   : $cbr_sent_pkts"
+        puts "cbr($node_id) Packets sent   : [$cbr($node_id) getrecvpkts]"
+        puts "cbr_sink($sinkId,$node_id) Throughput     : $cbr_throughput"
         puts "cbr_sink($sinkId, $node_id) Packets rcv   : $cbr_rcv_pkts"
-        puts "cbr($node_id) PER            : $cbr_per       "
+        puts "cbr_sink($sinkId,$node_id) PER            : $cbr_per       "
         puts ""
 
-        #set cbr_sink_throughput         [$cbr_sink(254,$node_id) getthr]
-        #set cbr_sink_per                [$cbr_sink(254,$node_id) getper]
+        set sum_cbr_throughput [expr $sum_cbr_throughput + $cbr_throughput]
         set sum_cbr_sent_pkts [expr $sum_cbr_sent_pkts + $cbr_sent_pkts]
         set sum_cbr_rcv_pkts  [expr $sum_cbr_rcv_pkts + $cbr_rcv_pkts]
-
-        #foreach sink_id $sink_ids {
-        #    set cbr_rcv_pkts                [$cbr_sink($sink_id,$node_id) getrecvpkts]
-        #    set cbr_sink_throughput         [$cbr_sink($sink_id,$node_id) getthr]
-        #    set cbr_sink_per                [$cbr_sink($sink_id,$node_id) getper]
-        #    if ($opt(verbose)) {
-        #        puts "cbr_sink($sink_id) Throughput     : $cbr_sink_throughput"
-        #        puts "cbr_sink($sink_id) PER            : $cbr_sink_per"
-        #        puts "cbr_sink($sink_id) Recv           : $cbr_rcv_pkts"
-        #        puts "-------------------------------------------"
-        #    }
-        #    set sum_cbr_rcv_pkts  [expr $sum_cbr_rcv_pkts + $cbr_rcv_pkts]
-        #}
     }
 
     set ipheadersize        [$ipif(1) getipheadersize]
     set udpheadersize       [$udp(1) getudpheadersize]
     set cbrheadersize       [$cbr(1) getcbrheadersize]
-    # set throughput          [$cbr_sink($sinkId) getthr]
-    # set recv_pkts           [$cbr_sink($sinkId) getrecvpkts]
     set pdr                 [expr $sum_cbr_sent_pkts > 0 ? ($sum_cbr_rcv_pkts / $sum_cbr_sent_pkts * 100) : 100.0]
 
     if ($opt(verbose)) {
-        #puts "Mean Throughput          : $throughput"
+        puts "Mean Throughput           : [expr $sum_cbr_throughput / $nSensors]"
         puts "Sent Packets              : $sum_cbr_sent_pkts"
         puts "Received Packets          : $sum_cbr_rcv_pkts"
         puts "Packet Delivery Ratio     : $pdr"
@@ -392,11 +377,6 @@ proc finish {} {
             puts "MAC-level average retransmissions per node : [expr $sum_rtx/($opt(nn))]"
         }
         puts "---------------------------------------------------------------------"
-        puts "- Example of PHY layer statistics for node 1 -"
-        #puts "Tot. pkts lost            : [$phy(1) getTotPktsLost]"
-        #puts "Tot. energy               : [$phy(1) getConsumedEnergyTx]"
-
-        puts "done!"
     }
 
     $ns flush-trace
@@ -404,6 +384,5 @@ proc finish {} {
 }
 
 $ns at [expr $opt(stoptime) + 250.0]  "finish; $ns halt"
-#$ns at [expr $opt(stoptime) + 250.0]  "$ns halt"
 
 $ns run
