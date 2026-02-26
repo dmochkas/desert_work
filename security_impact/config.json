@@ -1,0 +1,20 @@
+{
+  "desertEnv": "$DESERT_HOME/DESERT_buildCopy_LOCAL/environment",
+  "rngRounds": 20,
+  "rngStart": 1,
+  "combine": {
+    "nSensors": [16, 32],
+    "frameSize": [20, 36, 68, 132],
+    "dutyCycle": [1, 5, 10],
+    "modem": ["LF", "MF", "HF"],
+    "addedSecurity": [4, 8, 16]
+  },
+  "iterations": [],
+  "order": [
+    "frameSize",
+    "dutyCycle",
+    "addedSecurity",
+    "nSensors",
+    "modem"
+  ]
+}

@@ -1,0 +1,58 @@
+---
+opt:
+  bashParamOrder:
+    - frameSize
+    - dutyCycle
+    - addedSecurity
+    - nSensors
+    - modem
+    - rngstream
+  starttime: 1
+  stoptime: 86400
+  propagation_speed: 1500
+  maxinterval_: 200
+  ACK_Active: false
+  modem: LF
+  modems:
+    LF:
+      bitrate: 260,
+      txPower: 3.3,
+      txPressure: 156,
+      rxPower: 0.3,
+      freq: 50000,
+      bandwidth: 25000,
+      range: 1500
+    MF:
+      bitrate: 260,
+      txPower: 3.3,
+      txPressure: 156,
+      rxPower: 0.3,
+      freq: 50000,
+      bandwidth: 25000,
+      range: 1500
+    HF:
+      bitrate: 260,
+      txPower: 3.3,
+      txPressure: 156,
+      rxPower: 0.3,
+      freq: 50000,
+      bandwidth: 25000,
+      range: 1500
+MPropagation/Underwater:
+  practicalSpreading_: 1.5
+  windspeed_: 2
+  shipping_: 0.2
+  debug_: 0
+Module/UW/CBR:
+  PoissonTraffic_: 1
+  debug_: 0
+Module/UW/PHYSICAL:
+  AcquisitionThreshold_dB_: 15.0
+  RxSnrPenalty_dB_: 0
+  TxSPLMargin_dB_: 0
+  MinTxSPL_dB_: 10
+  PER_target_: 0
+  CentralFreqOptimization_: 0
+  BandwidthOptimization_: 0
+  SPLOptimization_: 0
+  debug_: 0
