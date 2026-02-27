@@ -33,6 +33,8 @@ source "../common/exporters.tcl"
 load-config "added_security_settings.yaml"
 load-positions "dag_position_6.yaml"
 
+set CSV_SEPARATOR ,
+
 ##################
 # Tcl variables  #
 ##################
@@ -345,10 +347,12 @@ proc finish_diag {} {
 }
 
 proc finish_export {} {
+    global opt sensorIds position cbr cbr_sink phy sinkId
+    global CSV_SEPARATOR CSV_CONTENT_SEPARATOR
+
     set data [list]
-    "simDuration,nSensors,opt..." <--- parameters
-    "id,x,y,z,sentPkts,receivedPkts,E," <--- sensor
-    ""
+    set exportOpts [list simDuration cbrPeriod modem rngstream propagation_speed frameSize lambda nSensors headerSize payloadSize dutyCycle]
+    # "id,x,y,z,sentPkts,receivedPkts,E," <--- sensor
     # pdr (should change only in case of), energy overhead, goodput, per packet overhead
     foreach sensor $sensorIds {
         set row [dict create]
@@ -360,15 +364,16 @@ proc finish_export {} {
         dict set row receivedPkts  [$cbr_sink($sinkId,$sensor) getrecvpkts]
         dict set row throughput    [$cbr_sink($sinkId,$sensor) getthr]
         dict set row per           [$cbr_sink($sinkId,$sensor) getper]
-        dict set row E             [$phy($sensor) ...]
+        #dict set row E             [$phy($sensor) ...]
 
         lappend data $row
     }
 
-    csvExporter parameters
-    puts ""
-    csvExporter data ,
-    puts ""
+    puts $CSV_CONTENT_SEPARATOR
+    csvOptExporter exportOpts $CSV_SEPARATOR
+    puts $CSV_CONTENT_SEPARATOR
+    csvExporter data $CSV_SEPARATOR
+    puts $CSV_CONTENT_SEPARATOR
 
 }
 
