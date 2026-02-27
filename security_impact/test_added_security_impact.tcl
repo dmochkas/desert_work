@@ -1,10 +1,3 @@
-######################################
-# Flags to enable or disable options #
-######################################
-set opt(verbose) 			1
-set opt(trace_files)		0
-set opt(bash_parameters) 	1
-
 #####################
 # Library Loading   #
 #####################
@@ -25,15 +18,17 @@ load libuwstats_utilities.so
 load libuwphysical.so
 load libuwahoi_phy.so
 
+#############################
 # NS-Miracle initialization #
 #############################
-# You always need the following two lines to use the NS-Miracle simulator
 set ns [new Simulator]
 $ns use-Miracle
 
 source "../common/get-config.tcl"
 source "../common/parameters.tcl"
 source "../common/positioning.tcl"
+source "../common/communication.tcl"
+source "../common/exporters.tcl"
 
 load-config "added_security_settings.yaml"
 load-positions "dag_position_6.yaml"
@@ -41,28 +36,26 @@ load-positions "dag_position_6.yaml"
 ##################
 # Tcl variables  #
 ##################
-set opt(txduration)         [expr $opt(stoptime) - $opt(starttime)] ;# Duration of the simulation
 
-set opt(txpower)            156.0  ;#Power transmitted in dB re uPa
+#set opt(txpower)            156.0  ;#Power transmitted in dB re uPa
 #set opt(txpower)            174.0  ;#Power transmitted in dB re uPa
-set opt(max_range)          300    ;# Max transmission range
+#set opt(max_range)          300    ;# Max transmission range
 
-# TODO: Compute
-set opt(cbr_period)         10000
 set opt(rngstream)	1
 
 if {$opt(bash_parameters)} {
     set opt(finish_mode)        "export" ;# diag or export
     parseBashParams $opt(bashParamOrder)
-    puts "$opt(rngstream)"
-    puts "$opt(modem)"
-    set value [dict get $opt(modems) $opt(modem)]
-    puts "$value"
 } else {
     set opt(finish_mode)        "diag" ;# diag or export
 }
 
-set modemConfig [dict get $opt(modems) $opt(modem)]
+set modemConfig       [dict get $opt(modems) $opt(modem)]
+set opt(simDuration)  [expr $opt(stoptime) - $opt(starttime)]
+set opt(lambda)       [getRateFromSizeRateAndDuty $opt(frameSize) [dict get $modemConfig bitrate] $opt(dutyCycle)]
+set opt(cbrPeriod)    [ratePeriod $opt(lambda)]
+# INFO: ip and udp layers give 4 bytes of overhead --- typical constrained IoT overhead
+set opt(payloadSize)      [expr $opt(frameSize) - $opt(headerSize)]
 
 if {$opt(ACK_Active)} {
     set opt(ack_mode)           "setAckMode"
@@ -97,10 +90,9 @@ if {$opt(trace_files)} {
 # Module Configuration  #
 #########################
 # TODO: Compute pktsize
-set opt(pktsize) 32
-Module/UW/CBR set packetSize_          $opt(pktsize)
-# TODO: Compute period
-Module/UW/CBR set period_              $opt(cbr_period)
+# TODO: Added security is not required
+Module/UW/CBR set packetSize_          $opt(payloadSize)
+Module/UW/CBR set period_              $opt(cbrPeriod)
 
 Module/UW/PHYSICAL  set BitRate_                    [dict get $modemConfig bitrate]
 Module/UW/PHYSICAL  set MaxTxSPL_dB_                [dict get $modemConfig txPressure]
@@ -268,10 +260,11 @@ for {set i 0} {$i < [llength $sensorIds]} {incr i} {
     $ns at $opt(stoptime)     "$cbr($sensor) stop"
 }
 
+# TODO: Parseable output
 ###################
 # Final Procedure #
 ###################
-proc finish {} {
+proc finish_diag {} {
     global ns opt outfile modemConfig
     global mac propagation cbr_sink mac_sink phy phy_data_sink channel db_manager propagation
     global node_coordinates position
@@ -279,26 +272,25 @@ proc finish {} {
     global node_stats tmp_node_stats sink_stats tmp_sink_stats
     global sinkId sensorIds relayIds nSensors
 
-    if ($opt(verbose)) {
-        puts "---------------------------------------------------------------------"
-        puts "Simulation summary"
-        puts "number of sensors  : $opt(nSensors)"
-        puts "packet size      : $opt(pktsize) byte"
-        puts "cbr period       : $opt(cbr_period) s"
-        puts "simulation length: $opt(txduration) s"
-        puts "tx pressure      : [dict get $modemConfig txPressure] dB"
-        puts "tx power         : [dict get $modemConfig txPower] dB"
-        puts "tx frequency     : [dict get $modemConfig freq] Hz"
-        puts "tx bandwidth     : [dict get $modemConfig bandwidth] Hz"
-        puts "bitrate          : [dict get $modemConfig bitrate] bps"
-        puts "range          : [dict get $modemConfig range] bps"
-        if {$opt(ack_mode) == "setNoAckMode"} {
-            puts "ACKNOWLEDGEMENT   : disabled"
-        } else {
-            puts "ACKNOWLEDGEMENT   : active"
-        }
-        puts "---------------------------------------------------------------------"
+    puts "---------------------------------------------------------------------"
+    puts "Simulation summary"
+    puts "number of sensors  : $opt(nSensors)"
+    puts "packet size      : $opt(pktsize) byte"
+    puts "cbr period       : $opt(cbrPeriod) s"
+    puts "simulation length: $opt(simDuration) s"
+    puts "tx pressure      : [dict get $modemConfig txPressure] dB"
+    puts "tx power         : [dict get $modemConfig txPower] W"
+    puts "tx frequency     : [dict get $modemConfig freq] Hz"
+    puts "tx bandwidth     : [dict get $modemConfig bandwidth] Hz"
+    puts "bitrate          : [dict get $modemConfig bitrate] bps"
+    puts "range          : [dict get $modemConfig range] m"
+    if {$opt(ack_mode) == "setNoAckMode"} {
+        puts "ACKNOWLEDGEMENT   : disabled"
+    } else {
+        puts "ACKNOWLEDGEMENT   : active"
     }
+    puts "---------------------------------------------------------------------"
+
     set sum_cbr_throughput     0
     set sum_per                0
     set sum_cbr_sent_pkts      0.0
@@ -336,22 +328,52 @@ proc finish {} {
     set cbrheadersize       [$cbr(1) getcbrheadersize]
     set pdr                 [expr $sum_cbr_sent_pkts > 0 ? ($sum_cbr_rcv_pkts / $sum_cbr_sent_pkts * 100) : 100.0]
 
-    if ($opt(verbose)) {
-        puts "Mean Throughput           : [expr $sum_cbr_throughput / $nSensors]"
-        puts "Sent Packets              : $sum_cbr_sent_pkts"
-        puts "Received Packets          : $sum_cbr_rcv_pkts"
-        puts "Packet Delivery Ratio     : $pdr"
-        puts "IP Pkt Header Size        : $ipheadersize"
-        puts "UDP Header Size           : $udpheadersize"
-        puts "CBR Header Size           : $cbrheadersize"
-        if {$opt(ack_mode) == "setAckMode"} {
-            puts "MAC-level average retransmissions per node : [expr $sum_rtx/($opt(nn))]"
-        }
-        puts "---------------------------------------------------------------------"
+    puts "Mean Throughput           : [expr $sum_cbr_throughput / $nSensors]"
+    puts "Sent Packets              : $sum_cbr_sent_pkts"
+    puts "Received Packets          : $sum_cbr_rcv_pkts"
+    puts "Packet Delivery Ratio     : $pdr"
+    puts "IP Pkt Header Size        : $ipheadersize"
+    puts "UDP Header Size           : $udpheadersize"
+    puts "CBR Header Size           : $cbrheadersize"
+    if {$opt(ack_mode) == "setAckMode"} {
+        puts "MAC-level average retransmissions per node : [expr $sum_rtx/($opt(nn))]"
     }
+    puts "---------------------------------------------------------------------"
 
     $ns flush-trace
     close $opt(tracefile)
+}
+
+proc finish_export {} {
+    set data [list]
+    "simDuration,nSensors,opt..." <--- parameters
+    "id,x,y,z,sentPkts,receivedPkts,E," <--- sensor
+    ""
+    # pdr (should change only in case of), energy overhead, goodput, per packet overhead
+    foreach sensor $sensorIds {
+        set row [dict create]
+        dict set row id $sensor
+        dict set row positionX     [$position($sensor) getX_]
+        dict set row positionY     [$position($sensor) getY_]
+        dict set row positionZ     [$position($sensor) getZ_]
+        dict set row sentPkts      [$cbr($sensor) getsentpkts]
+        dict set row receivedPkts  [$cbr_sink($sinkId,$sensor) getrecvpkts]
+        dict set row throughput    [$cbr_sink($sinkId,$sensor) getthr]
+        dict set row per           [$cbr_sink($sinkId,$sensor) getper]
+        dict set row E             [$phy($sensor) ...]
+
+        lappend data $row
+    }
+
+    csvExporter parameters
+    puts ""
+    csvExporter data ,
+    puts ""
+
+}
+
+proc finish {} {
+    finish_export
 }
 
 $ns at [expr $opt(stoptime) + 250.0]  "finish; $ns halt"

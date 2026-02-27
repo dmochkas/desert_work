@@ -10,9 +10,12 @@ opt:
   starttime: 1
   stoptime: 86400
   propagation_speed: 1500
+  headerSize: 4
   maxinterval_: 200
   ACK_Active: false
   modem: LF
+  trace_files: false
+  bash_parameters: true
   modems:
     LF:
       bitrate: 260,
