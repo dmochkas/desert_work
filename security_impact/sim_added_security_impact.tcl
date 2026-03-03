@@ -28,6 +28,7 @@ source "../common/get-config.tcl"
 source "../common/parameters.tcl"
 source "../common/positioning.tcl"
 source "../common/communication.tcl"
+source "../common/energy.tcl"
 source "../common/exporters.tcl"
 
 load-config "added_security_settings.yaml"
@@ -38,18 +39,10 @@ set CSV_SEPARATOR ,
 ##################
 # Tcl variables  #
 ##################
-
-#set opt(txpower)            156.0  ;#Power transmitted in dB re uPa
-#set opt(txpower)            174.0  ;#Power transmitted in dB re uPa
-#set opt(max_range)          300    ;# Max transmission range
-
 set opt(rngstream)	1
 
 if {$opt(bash_parameters)} {
-    set opt(finish_mode)        "export" ;# diag or export
     parseBashParams $opt(bashParamOrder)
-} else {
-    set opt(finish_mode)        "diag" ;# diag or export
 }
 
 set modemConfig       [dict get $opt(modems) $opt(modem)]
@@ -347,7 +340,7 @@ proc finish_diag {} {
 }
 
 proc finish_export {} {
-    global opt sensorIds position cbr cbr_sink phy sinkId
+    global opt modemConfig sensorIds position cbr cbr_sink phy sinkId
     global CSV_SEPARATOR CSV_CONTENT_SEPARATOR
 
     set data [list]
@@ -364,7 +357,7 @@ proc finish_export {} {
         dict set row receivedPkts  [$cbr_sink($sinkId,$sensor) getrecvpkts]
         dict set row throughput    [$cbr_sink($sinkId,$sensor) getthr]
         dict set row per           [$cbr_sink($sinkId,$sensor) getper]
-        #dict set row E             [$phy($sensor) ...]
+        dict set row E             [computeTxConsumption $phy($sensor) [dict get $modemConfig idlePower] $opt(starttime) $opt(stoptime)]
 
         lappend data $row
     }
@@ -373,12 +366,16 @@ proc finish_export {} {
     csvOptExporter exportOpts $CSV_SEPARATOR
     puts $CSV_CONTENT_SEPARATOR
     csvExporter data $CSV_SEPARATOR
-    puts $CSV_CONTENT_SEPARATOR
-
 }
 
 proc finish {} {
-    finish_export
+    global opt
+
+    if {$opt(output) == "diag"} {
+        finish_diag
+    } elseif {$opt(output) == "export"} {
+        finish_export
+    }
 }
 
 $ns at [expr $opt(stoptime) + 250.0]  "finish; $ns halt"

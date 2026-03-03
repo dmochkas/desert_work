@@ -1,10 +1,8 @@
 
-set BYTE_BITS 8
-
 proc getRateFromSizeRateAndDuty {frameSizeBytes bitrate dutyCycle} {
-    global BYTE_BITS
+    global consts
 
-    return [expr 0.01 * ($dutyCycle*$bitrate)/($frameSizeBytes*$BYTE_BITS)]
+    return [expr 0.01 * ($dutyCycle*$bitrate)/($frameSizeBytes*$consts(BYTE_BITS))]
 }
 
 proc ratePeriod {value} {

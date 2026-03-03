@@ -2,6 +2,8 @@ import itertools
 import json
 import os
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -69,8 +71,9 @@ class SimConfig:
     def cwd(self, value: str | Path | None) -> None:
         self._cwd = normalize_path(value) if value is not None else Path.cwd().resolve()
 
+
     def __from_file(self, cfg_file: str | Path):
-        cfg_json = read_json_config(cfg_file)
+        cfg_json = _read_json_config(cfg_file)
 
         self.desertEnv = cfg_json.get("desertEnv", self.desertEnv)
         self.cwd = cfg_json.get("cwd", self.cwd)
@@ -80,7 +83,33 @@ class SimConfig:
         self._order = cfg_json.get("order", self._order)
         self._iterations = _get_iterations_from_config(cfg_json, self._order)
 
-    def run(self, dry_run: bool = False, verbose: bool = False):
+
+    def _run_task(self, cmd, cancel_event, verbose):
+        if cancel_event.is_set():
+            if verbose:
+                print("Cancel evnt is set. Skipping command: ", cmd)
+            return -1
+
+        if verbose:
+            print("Executing in a thread:", cmd)
+
+        completed = subprocess.run(["bash", "-c", cmd], cwd=self.cwd)
+        return completed.returncode
+
+
+    def _build_cmd(self, rng: int, it: Dict[str, Any]):
+        cmds: List[str] = []
+        if self.desertEnv:
+            cmds.append(f"source '{self.desertEnv}'")
+
+        params = " ".join(str(it[k]) for k in it)
+        cmd = f"{self._runner} {self._script} {params} {rng}".strip()
+        cmds.append(cmd)
+
+        return " && ".join(cmds)
+
+
+    def run(self, parallel: bool = False, dry_run: bool = False, verbose: bool = False):
         if verbose:
             print(
                 f"Loaded: rng_rounds={self._rngRounds}, rng_start={self._rngStart}, entries={len(self._iterations)}"
@@ -89,47 +118,34 @@ class SimConfig:
         if self.desertEnv and not self.desertEnv.exists():
             raise FileNotFoundError(f"DESERT env file not found: {self.desertEnv}")
 
-        if len(self._iterations) > ITERATIONS_BATCH_SIZE:
-            if verbose:
-                print(f"Executing iterations in batches of {ITERATIONS_BATCH_SIZE}")
+        cancel_event = threading.Event()
 
-        n_batches = int(len(self._iterations) / ITERATIONS_BATCH_SIZE)
-        for b in range(n_batches):
-            if verbose:
-                print(f"Batch {b}:")
-            self._run_internal(b, dry_run, verbose)
-
-    def _run_internal(self, batch: int = 0, dry_run: bool = False, verbose: bool = False):
-        cmds: List[str] = []
-        if self.desertEnv:
-            cmds.append(f"source '{self.desertEnv}'")
-
-        curr_iter = batch * ITERATIONS_BATCH_SIZE
-        for it in self._iterations[curr_iter:min(len(self._iterations), curr_iter + ITERATIONS_BATCH_SIZE)]:
-            for r in range(self._rngStart, self._rngStart + self._rngRounds):
-                params = " ".join(str(it[k]) for k in it)
-                cmd = f"{self._runner} {self._script} {params} {r}".strip()
-                cmds.append(cmd)
-
-        sep = " && "
-        full_cmd = sep.join(cmds)
+        cmds = [self._build_cmd(rng, it) for rng in range(self._rngStart, self._rngStart + self._rngRounds) for it in self._iterations]
 
         if dry_run:
-            print("DRY_RUN chained command:\n", full_cmd[:min(len(full_cmd), 5000)])
             return
 
-        if verbose:
-            print("Executing bash command...")
-            print(full_cmd[:min(len(full_cmd), 1000)])
+        if parallel:
+            with ThreadPoolExecutor() as executor:
+                futures = {executor.submit(self._run_task, cmd, cancel_event, verbose): cmd for cmd in cmds}
+                for future in as_completed(futures):
+                    rc = future.result()
+                    if rc != 0:
+                        cancel_event.set()
+                        raise RuntimeError(f"Command failed with exit code {rc}")
+            return
 
-        completed = subprocess.run(["bash", "-c", full_cmd], cwd=self.cwd)
-        if completed.returncode != 0:
-            raise RuntimeError(f"Chained command failed with exit code {completed.returncode}")
+        for cmd in cmds:
+            if verbose:
+                print("Executing bash command...")
+                print(cmd)
 
-        if verbose:
-            print("Success!")
+            completed = subprocess.run(["bash", "-c", cmd], cwd=self.cwd)
+            if completed.returncode != 0:
+                raise RuntimeError(f"Command failed with exit code {completed.returncode}")
 
-def read_json_config(cfg_file: str | Path) -> Dict[str, Any]:
+
+def _read_json_config(cfg_file: str | Path) -> Dict[str, Any]:
     cfg_path = Path(cfg_file).resolve()
 
     if not cfg_path.is_file():

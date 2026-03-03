@@ -1,22 +1,15 @@
 ---
 opt:
-  bashParamOrder:
-    - frameSize
-    - dutyCycle
-    - addedSecurity
-    - nSensors
-    - modem
-    - rngstream
   starttime: 1
   stoptime: 86400
   propagation_speed: 1500
-  headerSize: 4
   maxinterval_: 200
   ACK_Active: false
+  headerSize: 4
   modem: LF
   trace_files: false
   bash_parameters: true
-  output: export
+  output: diag
   modems:
     LF:
       bitrate: 260

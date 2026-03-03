@@ -81,25 +81,26 @@ else
 fi
 OUT_DIR="data/${SCRIPT_NAME}/${ARGS_TAG_DIR}"
 RUN_TAG="${ARGS_TAG}"
-
-# Work on a temp copy to avoid accidental in-place edits during runs
-SCRIPT_TMP="./.desert/tmp_${SCRIPT_NAME}_${RUN_TAG}.tcl"
-safe_cp "${SCRIPT}" "${SCRIPT_TMP}"
+CONSOLE_OUTPUT="${OUT_DIR}/${RUN_TAG}_console.out"
 
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "DRY_RUN: would run -> ${NS_BIN} ${SCRIPT_TMP} ${NS_ARGS[*]} > console.out 2>&1"
   echo "DRY_RUN: would mkdir -p '${OUT_DIR}'"
-  echo "DRY_RUN: would move 'log_udp.out' -> '${OUT_DIR}/${RUN_TAG}_sink.out'"
-  echo "DRY_RUN: would move 'console.out' -> '${OUT_DIR}/${RUN_TAG}_node.out'"
+  echo "DRY_RUN: would move 'log_udp.out' -> '${OUT_DIR}/${RUN_TAG}_log.out'"
+  echo "DRY_RUN: would move 'console.out' -> '${CONSOLE_OUTPUT}'"
   echo "DRY_RUN: would delete temp script '${SCRIPT_TMP}'"
   exit 0
 fi
 
-echo "[$(date +'%F %T')] Running: ${NS_BIN} ${SCRIPT_TMP} ${NS_ARGS[*]}"
-"${NS_BIN}" "${SCRIPT_TMP}" "${NS_ARGS[@]}" > "console.out" 2>&1
-
+SCRIPT_TMP="./.desert/tmp_${SCRIPT_NAME}_${RUN_TAG}.tcl"
+safe_cp "${SCRIPT}" "${SCRIPT_TMP}"
 mkdir -p -- "${OUT_DIR}"
+
+echo "[$(date +'%F %T')] Running: ${NS_BIN} ${SCRIPT_TMP} ${NS_ARGS[*]}"
+"${NS_BIN}" "${SCRIPT_TMP}" "${NS_ARGS[@]}" > "${CONSOLE_OUTPUT}" 2>/dev/null
+
+# TODO: Unique name for log file
 move_if_exists "log.out" "${OUT_DIR}/${RUN_TAG}_log.out"
-move_if_exists "console.out" "${OUT_DIR}/${RUN_TAG}_console.out"
+# move_if_exists "console.out" "${OUT_DIR}/${RUN_TAG}_console.out"
 
 rm -f -- "${SCRIPT_TMP}"

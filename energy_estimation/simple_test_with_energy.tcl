@@ -33,7 +33,11 @@ load libuwahoi_phy.so
 set ns [new Simulator]
 $ns use-Miracle
 
-source "../common/energy.tcl"
+source "../common/tcl/consts.tcl"
+source "../common/tcl/energy.tcl"
+source "../common/tcl/get-config.tcl"
+
+load-config "../common/settings/basic_settings.yaml"
 
 ##################
 # Tcl variables  #
@@ -71,9 +75,10 @@ if {$opt(bash_parameters)} {
             set opt($opts($i)) $tmp
         }
     }
-} else {
-    set opt(finish_mode)        "diag" ;# diag or export
 }
+
+set modemConfig [dict get $opt(modems) $opt(modem)]
+set opt(frameSize) [expr $opt(pktsize) + $opt(headerSize)]
 
 if {$opt(ACK_Active)} {
     set opt(ack_mode)           "setAckMode"
@@ -272,7 +277,7 @@ proc finish {} {
     global node_coordinates position
     global ipr_sink ipr ipif udp cbr phy phy_data_sink
     global node_stats tmp_node_stats sink_stats tmp_sink_stats
-    global srcId dstId node_ids
+    global srcId dstId node_ids modemConfig
     if ($opt(verbose)) {
         puts "---------------------------------------------------------------------"
         puts "Simulation summary"
@@ -305,12 +310,14 @@ proc finish {} {
         set cbr_throughput              [$cbr($node_id) getthr]
         set cbr_per                     [$cbr($node_id) getper]
         set cbr_sent_pkts               [$cbr($node_id) getsentpkts]
+        set cbr_txtime              [$cbr($node_id) gettxtime]
 
         puts "position($node_id) X     : $position_x"
         puts "position($node_id) Y     : $position_y"
         puts "cbr($node_id) Throughput     : $cbr_throughput"
         puts "cbr($node_id) Packets sent   : $cbr_sent_pkts"
         puts "cbr($node_id) PER            : $cbr_per       "
+        puts "cbr($node_id) Tx time            : $cbr_txtime"
 
         #set cbr_rcv_pkts                [$cbr_sink(254,$node_id) getrecvpkts]
         #set cbr_sink_throughput         [$cbr_sink(254,$node_id) getthr]
@@ -354,7 +361,9 @@ proc finish {} {
         puts "- Example of PHY layer statistics for node 1 -"
         puts "Tot. pkts lost            : [$phy(0) getTotPktsLost]"
         puts "Tot. energy               : [$phy(0) getConsumedEnergyTx]"
-        puts "Tot. energy with idle     : [computeTotalConsumption $phy(0) 0.005 $opt(starttime) $opt(stoptime)]"
+        puts "Tot. energy with idle     : [computeTotalConsumption $phy(0) [dict get $modemConfig idlePower] $opt(starttime) $opt(stoptime)]"
+        puts "Tx energy with idle       : [computeTxConsumption $phy(0) [dict get $modemConfig idlePower] $opt(starttime) $opt(stoptime)]"
+        puts "Tot. sensor energy        : [computeSensorConsumption $cbr(0) $opt(frameSize) $modemConfig $opt(starttime) $opt(stoptime)]"
 
         puts "done!"
     }
